@@ -1,3 +1,9 @@
+libblockdev (2.26-1deepin) unstable; urgency=medium
+
+  * Backport libblockdev to use libext2fs instead of spawning dumpe2fs.
+
+ -- Tianyu Chen <sweetyfish@deepin.org>  Wed, 30 Aug 2023 17:21:52 +0800
+
 libblockdev (2.26-1) unstable; urgency=medium
 
   * Team upload
