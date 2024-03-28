@@ -2,15 +2,18 @@ from __future__ import division
 
 import unittest
 import os
-import six
 import re
+import shutil
 import time
 
-from distutils.version import LooseVersion
-from distutils.spawn import find_executable
+from packaging.version import Version
 
 import overrides_hack
 from utils import create_sparse_tempfile, create_lio_device, delete_lio_device, fake_utils, fake_path, mount, umount, run_command, TestTags, tag_test
+
+import gi
+gi.require_version('GLib', '2.0')
+gi.require_version('BlockDev', '3.0')
 from gi.repository import GLib, BlockDev
 
 TEST_MNT = "/tmp/libblockdev_test_mnt"
@@ -19,8 +22,7 @@ def wipefs(device):
     os.system("wipefs -a %s > /dev/null" % device)
 
 
-class BtrfsTestCase(unittest.TestCase):
-
+class BtrfsTest(unittest.TestCase):
     requested_plugins = BlockDev.plugin_specs_from_names(("btrfs",))
 
     @classmethod
@@ -29,13 +31,20 @@ class BtrfsTestCase(unittest.TestCase):
         if not BlockDev.utils_have_kernel_module("btrfs"):
             raise unittest.SkipTest('Btrfs kernel module not available, skipping.')
 
-        if not find_executable("btrfs"):
+        if not shutil.which("btrfs"):
             raise unittest.SkipTest("btrfs executable not foundin $PATH, skipping.")
 
         if not BlockDev.is_initialized():
             BlockDev.init(cls.requested_plugins, None)
         else:
             BlockDev.reinit(cls.requested_plugins, True, None)
+
+class BtrfsPluginVersionCase(BtrfsTest):
+    @tag_test(TestTags.NOSTORAGE)
+    def test_plugin_version(self):
+       self.assertEqual(BlockDev.get_plugin_soname(BlockDev.Plugin.BTRFS), "libbd_btrfs.so.3")
+
+class BtrfsTestCase(BtrfsTest):
 
     def setUp(self):
         self.addCleanup(self._clean_up)
@@ -71,7 +80,7 @@ class BtrfsTestCase(unittest.TestCase):
         m = re.search(r"[Bb]trfs.* v([\d\.]+)", out)
         if not m or len(m.groups()) != 1:
             raise RuntimeError("Failed to determine btrfs version from: %s" % out)
-        return LooseVersion(m.groups()[0])
+        return Version(m.groups()[0])
 
 class BtrfsTestCreateQuerySimple(BtrfsTestCase):
     @tag_test(TestTags.CORE)
@@ -185,10 +194,6 @@ class BtrfsTestCreateDeleteSubvolume(BtrfsTestCase):
     def test_create_delete_subvolume(self):
         """Verify that it is possible to create/delete subvolume"""
 
-        btrfs_version = self._get_btrfs_version()
-        if btrfs_version >= LooseVersion('4.13.2'):
-            self.skipTest('subvolumes list is broken with btrfs-progs v4.13.2')
-
         succ = BlockDev.btrfs_create_volume([self.loop_dev], "myShinyBtrfs", None, None, None)
         self.assertTrue(succ)
 
@@ -204,8 +209,10 @@ class BtrfsTestCreateDeleteSubvolume(BtrfsTestCase):
         self.assertEqual(len(subvols), 1)
 
         # already there
-        with self.assertRaises(GLib.GError):
-            BlockDev.btrfs_create_subvolume(TEST_MNT, "subvol1", None)
+        version = self._get_btrfs_version()
+        if version != Version("6.6.3"):
+            with self.assertRaises(GLib.GError):
+                BlockDev.btrfs_create_subvolume(TEST_MNT, "subvol1", None)
 
         succ = BlockDev.btrfs_delete_subvolume(TEST_MNT, "subvol1", None)
         self.assertTrue(succ)
@@ -214,8 +221,9 @@ class BtrfsTestCreateDeleteSubvolume(BtrfsTestCase):
         self.assertEqual(len(subvols), 0)
 
         # already removed
-        with self.assertRaises(GLib.GError):
-            BlockDev.btrfs_delete_subvolume(TEST_MNT, "subvol1", None)
+        if version != Version("6.6.3"):
+            with self.assertRaises(GLib.GError):
+                BlockDev.btrfs_delete_subvolume(TEST_MNT, "subvol1", None)
 
         succ = BlockDev.btrfs_create_subvolume(TEST_MNT, "subvol1", None)
         self.assertTrue(succ)
@@ -269,7 +277,7 @@ class BtrfsTestGetDefaultSubvolumeID(BtrfsTestCase):
         self.assertTrue(succ)
 
         # not mounted yet, should fail
-        with six.assertRaisesRegex(self, GLib.GError, r".*(can't|cannot) access.*"):
+        with self.assertRaisesRegex(GLib.GError, r".*(can't|cannot) access.*"):
             ret = BlockDev.btrfs_get_default_subvolume_id(TEST_MNT)
 
         mount(self.loop_dev, TEST_MNT)
@@ -321,10 +329,10 @@ class BtrfsTestListDevices(BtrfsTestCase):
         self.assertEqual(devs[1].id, 2)
         self.assertEqual(devs[0].path, self.loop_dev)
         self.assertEqual(devs[1].path, self.loop_dev2)
-        self.assertTrue(devs[0].size >= 0)
-        self.assertTrue(devs[1].size >= 0)
-        self.assertTrue(devs[0].used >= 0)
-        self.assertTrue(devs[1].used >= 0)
+        self.assertGreaterEqual(devs[0].size, 0)
+        self.assertGreaterEqual(devs[1].size, 0)
+        self.assertGreaterEqual(devs[0].used, 0)
+        self.assertGreaterEqual(devs[1].used, 0)
 
 class BtrfsTestListSubvolumes(BtrfsTestCase):
     @tag_test(TestTags.CORE)
@@ -363,7 +371,7 @@ class BtrfsTestFilesystemInfo(BtrfsTestCase):
         self.assertEqual(info.label, label)
         self.assertTrue(info.uuid)
         self.assertEqual(info.num_devices, 1)
-        self.assertTrue(info.used >= 0)
+        self.assertGreaterEqual(info.used, 0)
 
 class BtrfsTestFilesystemInfoNoLabel(BtrfsTestCase):
     def test_filesystem_info(self):
@@ -378,7 +386,7 @@ class BtrfsTestFilesystemInfoNoLabel(BtrfsTestCase):
         self.assertEqual(info.label, str())
         self.assertTrue(info.uuid)
         self.assertEqual(info.num_devices, 1)
-        self.assertTrue(info.used >= 0)
+        self.assertGreaterEqual(info.used, 0)
 
 class BtrfsTestMkfs(BtrfsTestCase):
     @tag_test(TestTags.CORE)
@@ -540,16 +548,14 @@ class BtrfsJustBigEnoughTestCase (BtrfsTestCase):
         self.assertTrue(succ)
 
 
-class FakeBtrfsUtilsTestCase(BtrfsTestCase):
-    # no setUp nor tearDown needed, we are gonna use fake utils
-    def setUp(self):
-        pass
-
+class FakeBtrfsUtilsTestCase(BtrfsTest):
     @tag_test(TestTags.NOSTORAGE)
     def test_list_subvols_weird_docker_data(self):
         """Verify that list_subvolumes works as expected on weird data from one Docker use case"""
 
-        with fake_utils("tests/btrfs_subvols_docker"):
+        BlockDev.btrfs_is_tech_avail(BlockDev.BtrfsTech.FS, 0)
+
+        with fake_utils("tests/fake_utils/btrfs_subvols_docker"):
             subvols = BlockDev.btrfs_list_subvolumes("fake_dev", False)
 
         # make sure subvolumes are sorted properly (parents before children)
@@ -561,60 +567,23 @@ class FakeBtrfsUtilsTestCase(BtrfsTestCase):
         # check that one of the weird subvols is in the list of subvolumes
         self.assertTrue(any(subvol for subvol in subvols if subvol.path == "docker/btrfs/subvolumes/f2062b736fbabbe4da752632ac4deae87fcb916add6d7d8f5cecee4cbdc41fd9"))
 
-class BTRFSUnloadTest(BtrfsTestCase):
-    def setUp(self):
-        # make sure the library is initialized with all plugins loaded for other
-        # tests
-        self.addCleanup(BlockDev.reinit, self.requested_plugins, True, None)
-
+class BTRFSSkipTest(BtrfsTest):
     @tag_test(TestTags.NOSTORAGE)
-    def test_check_low_version(self):
-        """Verify that checking the minimum BTRFS version works as expected"""
+    def test_missing_dependencies(self):
+        """Verify that checking for technology support works as expected"""
 
-        # unload all plugins first
-        self.assertTrue(BlockDev.reinit([], True, None))
-
-        with fake_utils("tests/btrfs_low_version/"):
-            # too low version of BTRFS available, the BTRFS plugin should fail to load
-            with self.assertRaises(GLib.GError):
-                BlockDev.reinit(self.requested_plugins, True, None)
-
-            self.assertNotIn("btrfs", BlockDev.get_available_plugin_names())
-
-        # load the plugins back
-        self.assertTrue(BlockDev.reinit(self.requested_plugins, True, None))
-        self.assertIn("btrfs", BlockDev.get_available_plugin_names())
-
-    @tag_test(TestTags.NOSTORAGE)
-    def test_check_new_version_format(self):
-        """Verify that checking the minimum BTRFS version works as expected with the new format"""
-
-        # unload all plugins first
-        self.assertTrue(BlockDev.reinit([], True, None))
-
-        # check that new version format is correctly parsed
-        with fake_utils("tests/btrfs_new_version_format/"):
-            BlockDev.reinit(self.requested_plugins, True, None)
-
-        self.assertIn("btrfs", BlockDev.get_available_plugin_names())
-
-        BlockDev.reinit(self.requested_plugins, True, None)
-        self.assertIn("btrfs", BlockDev.get_available_plugin_names())
-
-    @tag_test(TestTags.NOSTORAGE)
-    def test_check_no_btrfs(self):
-        """Verify that checking btrfs tool availability works as expected"""
-
-        # unload all plugins first
-        self.assertTrue(BlockDev.reinit([], True, None))
+        with fake_utils("tests/fake_utils/btrfs_low_version/"):
+            # too low version of BTRFS available
+            with self.assertRaisesRegex(GLib.GError, "Too low version of btrfs"):
+                BlockDev.btrfs_is_tech_avail(BlockDev.BtrfsTech.FS, 0)
 
         with fake_path(all_but="btrfs"):
-            # no btrfs tool available, the BTRFS plugin should fail to load
-            with self.assertRaises(GLib.GError):
-                BlockDev.reinit(self.requested_plugins, True, None)
+            # no btrfs tool available
+            with self.assertRaisesRegex(GLib.GError, "The 'btrfs' utility is not available"):
+                BlockDev.btrfs_is_tech_avail(BlockDev.BtrfsTech.FS, 0)
 
-            self.assertNotIn("btrfs", BlockDev.get_available_plugin_names())
+        # check that new version format is correctly parsed
+        with fake_utils("tests/fake_utils/btrfs_new_version_format/"):
+            avail = BlockDev.btrfs_is_tech_avail(BlockDev.BtrfsTech.FS, 0)
+            self.assertTrue(avail)
 
-        # load the plugins back
-        self.assertTrue(BlockDev.reinit(self.requested_plugins, True, None))
-        self.assertIn("btrfs", BlockDev.get_available_plugin_names())

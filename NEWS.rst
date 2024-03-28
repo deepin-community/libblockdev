@@ -1,3 +1,295 @@
+Libblockdev 3.1.1
+------------------
+
+New bugfix release of the libblockdev library with multiple fixes. See below
+for details.
+
+**Full list of changes**
+
+Giulio Benetti (1):
+
+- Use glib2 G_GNUC_UNUSED in place of UNUSED locally defined
+
+Tomas Bzatek (5):
+
+- Port to G_GNUC_INTERNAL for controlling symbols visibility
+- Fix some more occurrences of missing port to G_GNUC_UNUSED
+- dm_logging: Annotate redirect_dm_log() printf format
+- tests: Add NVMe persistent discovery controller tests
+- tests: Add NVMe controller type checks
+
+Vojtech Trefny (6):
+
+- Makefile: Fix bumpver to work with micro versions
+- tests: Manually remove removed PVs from LVM devices file
+- tests: Ignore LVM devices file for non-LVM tests
+- tests: Fix removing custom LVM devices file
+- nvme: Add bd_nvme_is_tech_avail to the API file
+- lvm-dbus: Fix passing size for pvresize over DBus
+
+Libblockdev 3.1.0
+------------------
+
+New minor release of the libblockdev library with multiple fixes. See below
+for details.
+
+**Full list of changes**
+
+Tomas Bzatek (7):
+
+- tests: Default to /tmp for create_sparse_tempfile()
+- tests: Avoid setting up intermediary loop device for the nvme target
+- tests: Remove unreliable nvme attribute checks
+- lvm-dbus: Fix leaking error
+- lvm-dbus: Avoid using already-freed memory
+- utils: Add expected printf string annotation
+- fs: Report reason for open() and ioctl() failures
+
+Vojtech Trefny (18):
+
+- ci: Add an action to compile libblockdev with different compilers
+- Sync spec with downstream
+- Add BDPluginSpec constructor and use it in plugin_specs_from_names
+- overrides: Remove unused 'sys' import
+- ci: Manually prepare spec file for Packit
+- ci: Remove the custom version command for Packit
+- swap: Add support for checking label and UUID format
+- fs: Add a function to check label format for F2FS
+- fs: Add a generic function to check for fs info availability
+- fs: Fix allowed UUID for generic mkfs with VFAT
+- fs: Add support for getting filesystem min size for NTFS and Ext
+- tests: Remove some obsolete rules to skip tests
+- Mark NVDIMM plugin as deprecated since 3.1
+- part: Fix potential double free when getting parttype
+- tests: Use BDPluginSpec constructor in LVM DBus plugin tests
+- python: Add a deepcopy function to our structs
+- Fix missing progress initialization in bd_crypto_luks_add_key
+- tests: Skip some checks for btrfs errors with btrfs-progs 6.6.3
+
+Libblockdev 3.0.4
+------------------
+
+New bugfix release of the libblockdev library with multiple fixes. See below
+for details.
+
+**Full list of changes**
+
+Jelle van der Waa (3):
+
+- plugins: use g_autofree for free'ing g_char's
+- plugins: btrfs: use g_autofree where possible for g_free
+- fs: correct btrfs set label description
+
+Tomas Bzatek (1):
+
+- nvme: Rework memory allocation for device ioctls
+
+Vojtech Trefny (11):
+
+- spec: Obsolete vdo plugin packages
+- spec: Move obsoleted devel subpackages to libblockdev-devel
+- ci: Bump actions/checkout from v3 to v4
+- part: Do not open disk read-write for read only operations
+- fs: Disable progress for ntfsresize
+- packit: Add configuration for downstream builds
+- logging: Default to DEBUG log level if compiled with --enable-debug
+- Use log function when calling a plugin function that is not loaded
+- lvm-dbus: Replace g_critical calls with bd_utils_log_format
+- tests: Fail early when recompilation fails in library_test
+- tests: Fix "invalid escape sequence '\#'" warning from Python 3.12
+
+Libblockdev 3.0.3
+------------------
+
+New bugfix release of the libblockdev library with multiple fixes. See below
+for details.
+
+**Full list of changes**
+
+Marius Vollmer (1):
+
+- Always use "--fs ignore" with lvresize
+
+Michael Biebl (1):
+
+- tests: Specificy required versions when importing GLib and BlockDev
+  introspection
+
+Tomas Bzatek (3):
+
+- nvme: Use interim buffer for nvme_get_log_sanitize()
+- nvme: Generate HostID when missing
+- tests: Minor NVMe HostNQN fixes
+
+Vojtech Trefny (4):
+
+- tests: Replace deprecated unittest assert calls
+- fs: Fix leaking directories with temporary mounts
+- fs: Fix memory leak
+- crypto: Correctly convert passphrases from Python to C
+
+Libblockdev 3.0.2
+------------------
+
+New bugfix release of the libblockdev library with multiple fixes. See below
+for details.
+
+**Full list of changes**
+
+Alexis Murzeau (1):
+
+- Use ntfsinfo instead of ntfscluster for faster bd_fs_ntfs_get_info
+
+Marek Szuba (1):
+
+- docs: Fix test quotation
+
+Michael Biebl (1):
+
+- Restrict list of exported symbols via -export-symbols-regex
+
+Tomas Bzatek (2):
+
+- lib: Silence the missing DEFAULT_CONF_DIR_PATH
+- loop: Report BD_LOOP_ERROR_DEVICE on empty loop devices
+
+Vojtech Trefny (5):
+
+- Fix formatting in NEWS.rst
+- fs: Fix unused error in extract_e2fsck_progress
+- fs: Use read-only mount where possible for generic FS functions
+- fs: Document that generic functions can mount filesystems
+- fs: Avoid excess logging in extract_e2fsck_progress
+
+Libblockdev 3.0.1
+------------------
+
+New bugfix release of the libblockdev library with multiple fixes. See below
+for details.
+
+**Full list of changes**
+
+Giulio Benetti (1):
+
+- loop: define LOOP_SET_BLOCK_SIZE is not defined
+
+Tomas Bzatek (6):
+
+- nvme: Mark private symbols as hidden
+- build: Exit before AC_OUTPUT on error
+- loop: Remove unused variable
+- crypto: Remove stray struct redefinition
+- boilerplate_generator: Annotate stub func args as G_GNUC_UNUSED
+- fs: Simplify struct BDFSInfo
+
+Vojtech Trefny (11):
+
+- vdo_stats: Remove unused libparted include
+- lvm: Make _vglock_start_stop static
+- lvm: Fix declaration for bd_lvm_vdolvpoolname
+- loop: Remove bd_loop_get_autoclear definition
+- lvm: Add bd_lvm_segdata_copy/free to the header file
+- fs: Add missing copy and free functions to the header file
+- misc: Update steps and Dockerfile for Python documentation
+- dist: Sync spec with downstream
+- spec: Add dependency on libblockdev-utils to the s390 plugin
+- configure: Fix MAJOR_VER macro
+- Make the conf.d directory versioned
+
+Libblockdev 3.0
+---------------
+
+New major release of the libblockdev library. This release contains a large
+API overhaul, please check the documentation for full list of API changes.
+
+**Notable changes**
+
+- VDO a KBD plugins were removed.
+- New NVMe plugin was added.
+- Runtime dependencies are no longer checked during plugin initialization.
+- Part plugin was rewritten to use libfdisk instead of libparted.
+- Crypto plugin API went through an extensive rewrite.
+- Support for new technologies was added to the crypto plugin: FileVault2 encryption,
+  DM Integrity, LUKS2 tokens.
+- Filesystem plugin adds support for btrfs, F2FS, NILFS2, exFAT and UDF.
+- Support for new filesystem operations was added to the plugin: setting label and UUID,
+  generic mkfs function and API for getting feature support for filesystems.
+- dmraid support was removed from the DM plugin.
+- Python 2 support was dropped.
+
+Libblockdev 2.28
+----------------
+
+New minor release of the libblockdev library with multiple fixes. See below
+for details.
+
+**Full list of changes**
+
+Michael Biebl (1):
+
+- Fix typos
+
+Vojtech Trefny (17):
+
+- lvm: Fix bd_lvm_get_supported_pe_sizes in Python on 32bit
+- tests: Create bigger devices for XFS tests
+- tests: Use ext instead of xfs in MountTestCase.test_mount_ro_device
+- mpath: Memory leak fix
+- spec: Require the same version utils from plugins
+- mdraid: Try harder to get container UUID in bd_md_detail
+- Add a test case for DDF arrays/containers
+- mdraid: Do not ignore errors from bd_md_canonicalize_uuid in bd_md_examine
+- mdraid: Try harder to get container UUID in bd_md_examine
+- mdraid: Fix copy-paste error when checking return value
+- tests: Wait for raid and mirrored LVs to be synced before removing
+- tests: Make smaller images for test_lvcreate_type
+- dm: Fix comparing DM RAID member devices UUID
+- mdraid: Fix use after free
+- ci: Add .lgtm.yaml config for LGTM
+- ci: Add GitHub actions for running rpmbuilds and csmock
+- mpath: Fix potential NULL pointer dereference
+
+zhanghongtao (1):
+
+- Fix mismatched functions return value type
+
+
+Libblockdev 2.27
+----------------
+
+New minor release of the libblockdev library with multiple fixes. See below
+for details.
+
+**Full list of changes**
+
+Tomas Bzatek (1):
+
+- fs: Return BD_FS_ERROR_UNKNOWN_FS on mounting unknown filesystem
+
+Vojtech Trefny (21):
+
+- overrides: Fix translating exceptions in ErrorProxy
+- tests: Do not check that swap flag is not supported on DOS table
+- tests: Lower expected free space on newly created Ext filesystems
+- tests: Remove test for NTFS read-only mounting
+- vdo_stats: Default to 100 % savings for invalid savings values
+- lvm: Fix reading statistics for VDO pools with VDO 8
+- tests: Fix creating loop device for CryptoTestLuksSectorSize
+- tests: Use losetup to create 4k sector size loop device for testing
+- s390: Remove double fclose in bd_s390_dasd_online (#2045784)
+- lvm-dbus: Add support for changing compression and deduplication
+- tests: Skip test_lvcreate_type on CentOS/RHEL 9
+- tests: Fix expected extended partition flags with new parted
+- lvm: Do not set global config to and empty string
+- lvm: Do not include duplicate entries in bd_lvm_lvs output
+- lvm: Use correct integer type in for comparison
+- crypto: Remove useless comparison in progress report in luks_format
+- boilerplate_generator: Remove unused variable assignment
+- kbd: Add missing progress reporting to bd_kbd_bcache_create
+- kbd: Fix leaking error in bd_kbd_bcache_detach
+- kbd: Fix potential NULL pointer dereference in bd_kbd_bcache_create
+- crypto: Remove unused and leaking error in write_escrow_data_file
+
 Libblockdev 2.26
 ----------------
 

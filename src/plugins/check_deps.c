@@ -18,11 +18,15 @@
  */
 
 #include <glib.h>
+#include <gio/gio.h>
 #include <blockdev/utils.h>
 
 #include "check_deps.h"
 
-gboolean __attribute__ ((visibility ("hidden")))
+#define DBUS_PROPS_IFACE "org.freedesktop.DBus.Properties"
+
+
+G_GNUC_INTERNAL gboolean
 check_deps (volatile guint *avail_deps, guint req_deps, const UtilDep *deps_specs, guint l_deps, GMutex *deps_check_lock, GError **error) {
     guint i = 0;
     gboolean ret = FALSE;
@@ -51,11 +55,13 @@ check_deps (volatile guint *avail_deps, guint req_deps, const UtilDep *deps_spec
                                                deps_specs[i].ver_arg, deps_specs[i].ver_regexp, &l_error);
             /* if not ret and l_error -> set/prepend error */
             if (!ret) {
-                if (*error)
-                    g_prefix_error (error, "%s\n", l_error->message);
-                else
-                    g_set_error (error, BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_UTIL_CHECK_ERROR,
-                                 "%s", l_error->message);
+                if (error) {
+                    if (*error)
+                        g_prefix_error (error, "%s\n", l_error->message);
+                    else
+                        g_set_error (error, BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_UTIL_CHECK_ERROR,
+                                     "%s", l_error->message);
+                }
                 g_clear_error (&l_error);
             } else
                 g_atomic_int_or (avail_deps, 1 << i);
@@ -67,7 +73,7 @@ check_deps (volatile guint *avail_deps, guint req_deps, const UtilDep *deps_spec
     return (val & req_deps) == req_deps;
 }
 
-gboolean __attribute__ ((visibility ("hidden")))
+G_GNUC_INTERNAL gboolean
 check_module_deps (volatile guint *avail_deps, guint req_deps, const gchar *const*modules, guint l_modules, GMutex *deps_check_lock, GError **error) {
     guint i = 0;
     gboolean ret = FALSE;
@@ -96,19 +102,23 @@ check_module_deps (volatile guint *avail_deps, guint req_deps, const gchar *cons
             /* if not ret and l_error -> set/prepend error */
             if (!ret) {
                 if (l_error) {
-                    if (*error)
-                        g_prefix_error (error, "%s\n", l_error->message);
-                    else
-                        g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
-                                     "%s", l_error->message);
+                    if (error) {
+                        if (*error)
+                            g_prefix_error (error, "%s\n", l_error->message);
+                        else
+                            g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
+                                         "%s", l_error->message);
+                    }
                     g_clear_error (&l_error);
                 } else {
                     /* no error from have_kernel_module means we don't have it */
-                    if (*error)
-                        g_prefix_error (error, "Kernel module '%s' not available\n", modules[i]);
-                    else
-                        g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
-                                     "Kernel module '%s' not available", modules[i]);
+                    if (error) {
+                        if (*error)
+                            g_prefix_error (error, "Kernel module '%s' not available\n", modules[i]);
+                        else
+                            g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
+                                         "Kernel module '%s' not available", modules[i]);
+                    }
                 }
 
             } else
@@ -121,7 +131,41 @@ check_module_deps (volatile guint *avail_deps, guint req_deps, const gchar *cons
     return (val & req_deps) == req_deps;
 }
 
-gboolean __attribute__ ((visibility ("hidden")))
+static gboolean _check_dbus_api_version (GBusType bus_type, const gchar *version, const gchar *version_iface, const gchar* version_prop, const gchar *version_bus, const gchar *version_path, GError **error) {
+    GDBusConnection *bus = NULL;
+    GVariant *args = NULL;
+    GVariant *ret = NULL;
+    GVariant *prop = NULL;
+    const gchar *bus_version = NULL;
+    int cmp = 0;
+
+    bus = g_bus_get_sync (bus_type, NULL, error);
+    if (!bus)
+        return FALSE;
+
+    args = g_variant_new ("(ss)", version_iface, version_prop);
+
+    /* consumes (frees) the 'args' parameter */
+    ret = g_dbus_connection_call_sync (bus, version_bus, version_path, DBUS_PROPS_IFACE,
+                                       "Get", args, NULL, G_DBUS_CALL_FLAGS_NONE,
+                                       -1, NULL, error);
+    if (!ret) {
+        g_prefix_error (error, "Failed to get %s property of the %s object: ", version_prop, version_path);
+        return FALSE;
+    }
+
+    g_variant_get (ret, "(v)", &prop);
+    g_variant_unref (ret);
+
+    bus_version = g_variant_get_string (prop, NULL);
+
+    cmp = bd_utils_version_cmp (bus_version, version, error);
+    g_variant_unref (prop);
+
+    return cmp >= 0;
+}
+
+G_GNUC_INTERNAL gboolean
 check_dbus_deps (volatile guint *avail_deps, guint req_deps, const DBusDep *buses, guint l_buses, GMutex *deps_check_lock, GError **error) {
     guint i = 0;
     gboolean ret = FALSE;
@@ -150,22 +194,53 @@ check_dbus_deps (volatile guint *avail_deps, guint req_deps, const DBusDep *buse
             /* if not ret and l_error -> set/prepend error */
             if (!ret) {
                 if (l_error) {
-                    if (*error)
-                        g_prefix_error (error, "%s\n", l_error->message);
-                    else
-                        g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
-                                     "%s", l_error->message);
+                    if (error) {
+                        if (*error)
+                            g_prefix_error (error, "%s\n", l_error->message);
+                        else
+                            g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
+                                         "%s", l_error->message);
+                    }
                     g_clear_error (&l_error);
                 } else {
-                    if (*error)
-                        g_prefix_error (error, "DBus service '%s' not available\n", buses[i].bus_name);
-                    else
-                        g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
-                                     "DBus service '%s' not available", buses[i].bus_name);
+                    if (error) {
+                        if (*error)
+                            g_prefix_error (error, "DBus service '%s' not available\n", buses[i].bus_name);
+                        else
+                            g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
+                                         "DBus service '%s' not available", buses[i].bus_name);
+                    }
                 }
-
-            } else
-                g_atomic_int_or (avail_deps, 1 << i);
+            } else {
+                /* check version of the DBus API if specified */
+                if (buses[i].version) {
+                    ret = _check_dbus_api_version (buses[i].bus_type, buses[i].version, buses[i].ver_intf, buses[i].ver_prop,
+                                                   buses[i].bus_name, buses[i].ver_path, &l_error);
+                    /* if not ret and l_error -> set/prepend error */
+                    if (!ret) {
+                        if (l_error) {
+                            if (error) {
+                                if (*error)
+                                    g_prefix_error (error, "%s\n", l_error->message);
+                                else
+                                    g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
+                                                 "%s", l_error->message);
+                            }
+                            g_clear_error (&l_error);
+                        } else {
+                            if (error) {
+                                if (*error)
+                                    g_prefix_error (error, "DBus service '%s' not available in version '%s'\n", buses[i].bus_name, buses[i].version);
+                                else
+                                    g_set_error (error, BD_UTILS_MODULE_ERROR, BD_UTILS_MODULE_ERROR_MODULE_CHECK_ERROR,
+                                                 "DBus service '%s' not available in version '%s'", buses[i].bus_name, buses[i].version);
+                            }
+                        }
+                    } else
+                       g_atomic_int_or (avail_deps, 1 << i);
+                } else
+                    g_atomic_int_or (avail_deps, 1 << i);
+            }
         }
     }
 
@@ -175,13 +250,14 @@ check_dbus_deps (volatile guint *avail_deps, guint req_deps, const DBusDep *buse
 }
 
 static gboolean _check_util_feature (const gchar *util, const gchar *feature, const gchar *feature_arg, const gchar *feature_regexp, GError **error) {
-    gchar *util_path = NULL;
+    g_autofree gchar *util_path = NULL;
     const gchar *argv[] = {util, feature_arg, NULL};
-    gchar *output = NULL;
+    g_autofree gchar *output = NULL;
     gboolean succ = FALSE;
     GRegex *regex = NULL;
     GMatchInfo *match_info = NULL;
-    gchar *features_str = NULL;
+    g_autofree gchar *features_str = NULL;
+    GError *l_error = NULL;
 
     util_path = g_find_program_in_path (util);
     if (!util_path) {
@@ -189,18 +265,17 @@ static gboolean _check_util_feature (const gchar *util, const gchar *feature, co
                      "The '%s' utility is not available", util);
         return FALSE;
     }
-    g_free (util_path);
 
-    succ = bd_utils_exec_and_capture_output (argv, NULL, &output, error);
+    succ = bd_utils_exec_and_capture_output (argv, NULL, &output, &l_error);
     if (!succ) {
         /* if we got nothing on STDOUT, try using STDERR data from error message */
-        if (g_error_matches ((*error), BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_NOOUT)) {
-            output = g_strdup ((*error)->message);
-            g_clear_error (error);
-        } else if (g_error_matches ((*error), BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_FAILED)) {
+        if (g_error_matches (l_error, BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_NOOUT)) {
+            output = g_strdup (l_error->message);
+            g_clear_error (&l_error);
+        } else if (g_error_matches (l_error, BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_FAILED)) {
             /* exit status != 0, try using the output anyway */
-            output = g_strdup ((*error)->message);
-            g_clear_error (error);
+            output = g_strdup (l_error->message);
+            g_clear_error (&l_error);
         } else
             return FALSE;
     }
@@ -208,7 +283,6 @@ static gboolean _check_util_feature (const gchar *util, const gchar *feature, co
     if (feature_regexp) {
         regex = g_regex_new (feature_regexp, 0, 0, error);
         if (!regex) {
-            g_free (output);
             /* error is already populated */
             return FALSE;
         }
@@ -217,7 +291,6 @@ static gboolean _check_util_feature (const gchar *util, const gchar *feature, co
         if (!succ) {
             g_set_error (error, BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_UTIL_FEATURE_CHECK_ERROR,
                          "Failed to determine %s's features from: %s", util, output);
-            g_free (output);
             g_regex_unref (regex);
             g_match_info_free (match_info);
             return FALSE;
@@ -233,26 +306,21 @@ static gboolean _check_util_feature (const gchar *util, const gchar *feature, co
     if (!features_str || (g_strcmp0 (features_str, "") == 0)) {
         g_set_error (error, BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_UTIL_FEATURE_CHECK_ERROR,
                      "Failed to determine %s's features from: %s", util, output);
-        g_free (features_str);
-        g_free (output);
         return FALSE;
     }
 
-    g_free (output);
 
     if (!g_strrstr (features_str, feature)) {
         g_set_error (error, BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_UTIL_FEATURE_UNAVAILABLE,
                      "Required feature %s not supported by this version of %s",
                      feature, util);
-        g_free (features_str);
         return FALSE;
     }
 
-    g_free (features_str);
     return TRUE;
 }
 
-gboolean __attribute__ ((visibility ("hidden")))
+G_GNUC_INTERNAL gboolean
 check_features (volatile guint *avail_deps, guint req_deps, const UtilFeatureDep *deps_specs, guint l_deps, GMutex *deps_check_lock, GError **error) {
     guint i = 0;
     gboolean ret = FALSE;
@@ -281,12 +349,16 @@ check_features (volatile guint *avail_deps, guint req_deps, const UtilFeatureDep
                                        deps_specs[i].feature_arg, deps_specs[i].feature_regexp, &l_error);
             /* if not ret and l_error -> set/prepend error */
             if (!ret) {
-                if (*error)
-                    g_prefix_error (error, "%s\n", l_error->message);
-                else
-                    g_set_error (error, BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_UTIL_FEATURE_CHECK_ERROR,
-                                 "%s", l_error->message);
-                g_clear_error (&l_error);
+                if (l_error) {
+                    if (error) {
+                        if (*error)
+                            g_prefix_error (error, "%s\n", l_error->message);
+                        else
+                            g_set_error (error, BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_UTIL_FEATURE_CHECK_ERROR,
+                                        "%s", l_error->message);
+                    }
+                    g_clear_error (&l_error);
+                }
             } else
                 g_atomic_int_or (avail_deps, 1 << i);
         }

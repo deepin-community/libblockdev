@@ -18,7 +18,6 @@
  */
 
 #include <glib.h>
-#include <parted/parted.h>
 #include <blockdev/utils.h>
 
 #include "vdo_stats.h"
@@ -26,7 +25,7 @@
 #define VDO_SYS_PATH "/sys/kvdo"
 
 
-gboolean __attribute__ ((visibility ("hidden")))
+G_GNUC_INTERNAL gboolean
 get_stat_val64 (GHashTable *stats, const gchar *key, gint64 *val) {
     const gchar *s;
     gchar *endptr = NULL;
@@ -42,14 +41,14 @@ get_stat_val64 (GHashTable *stats, const gchar *key, gint64 *val) {
     return TRUE;
 }
 
-gboolean __attribute__ ((visibility ("hidden")))
+G_GNUC_INTERNAL gboolean
 get_stat_val64_default (GHashTable *stats, const gchar *key, gint64 *val, gint64 def) {
     if (!get_stat_val64 (stats, key, val))
         *val = def;
     return TRUE;
 }
 
-gboolean __attribute__ ((visibility ("hidden")))
+G_GNUC_INTERNAL gboolean
 get_stat_val_double (GHashTable *stats, const gchar *key, gdouble *val) {
     const gchar *s;
     gchar *endptr = NULL;
@@ -96,7 +95,7 @@ static void add_block_stats (GHashTable *stats) {
     g_hash_table_replace (stats, g_strdup ("oneKBlocksUsed"), g_strdup_printf ("%"G_GINT64_FORMAT, (data_blocks_used + overhead_blocks_used) * block_size / 1024));
     g_hash_table_replace (stats, g_strdup ("oneKBlocksAvailable"), g_strdup_printf ("%"G_GINT64_FORMAT, (physical_blocks - data_blocks_used - overhead_blocks_used) * block_size / 1024));
     g_hash_table_replace (stats, g_strdup ("usedPercent"), g_strdup_printf ("%.0f", 100.0 * (gfloat) (data_blocks_used + overhead_blocks_used) / (gfloat) physical_blocks + 0.5));
-    savings = (logical_blocks_used > 0) ? (gint64) (100.0 * (gfloat) (logical_blocks_used - data_blocks_used) / (gfloat) logical_blocks_used) : -1;
+    savings = (logical_blocks_used > 0) ? (gint64) (100.0 * (gfloat) (logical_blocks_used - data_blocks_used) / (gfloat) logical_blocks_used) : 100;
     g_hash_table_replace (stats, g_strdup ("savings"), g_strdup_printf ("%"G_GINT64_FORMAT, savings));
     if (savings >= 0)
         g_hash_table_replace (stats, g_strdup ("savingPercent"), g_strdup_printf ("%"G_GINT64_FORMAT, savings));
@@ -133,22 +132,58 @@ static void add_computed_stats (GHashTable *stats) {
     add_journal_stats (stats);
 }
 
-GHashTable __attribute__ ((visibility ("hidden")))
-*vdo_get_stats_full (const gchar *name, GError **error) {
+static gchar* _dm_node_from_name (const gchar *map_name, GError **error) {
+    gchar *dev_path = NULL;
+    gchar *ret = NULL;
+    gchar *dev_mapper_path = g_strdup_printf ("/dev/mapper/%s", map_name);
+
+    dev_path = bd_utils_resolve_device (dev_mapper_path, error);
+    g_free (dev_mapper_path);
+    if (!dev_path)
+        /* error is already populated */
+        return NULL;
+
+    ret = g_path_get_basename (dev_path);
+    g_free (dev_path);
+
+    return ret;
+}
+
+G_GNUC_INTERNAL GHashTable *
+vdo_get_stats_full (const gchar *name, GError **error) {
     GHashTable *stats;
     GDir *dir;
     gchar *stats_dir;
     const gchar *direntry;
     gchar *s;
     gchar *val = NULL;
+    g_autofree gchar *dm_node = NULL;
+    GError *l_error = NULL;
 
-    /* TODO: does the `name` need to be escaped? */
-    stats_dir = g_build_path (G_DIR_SEPARATOR_S, VDO_SYS_PATH, name, "statistics", NULL);
-    dir = g_dir_open (stats_dir, 0, error);
-    if (dir == NULL) {
-        g_prefix_error (error, "Error reading statistics from %s: ", stats_dir);
-        g_free (stats_dir);
+    /* try "new" (kvdo >= 8) path first -- /sys/block/dm-X/vdo/statistics */
+    dm_node = _dm_node_from_name (name, error);
+    if (dm_node == NULL) {
+        g_prefix_error (error, "Failed to get DM node for %s: ", name);
         return NULL;
+    }
+
+    stats_dir = g_build_path (G_DIR_SEPARATOR_S, "/sys/block", dm_node, "vdo/statistics", NULL);
+    dir = g_dir_open (stats_dir, 0, &l_error);
+    if (dir == NULL) {
+        bd_utils_log_format (BD_UTILS_LOG_INFO,
+                             "Failed to read VDO stats using the new API, falling back to %s: %s",
+                             VDO_SYS_PATH, l_error->message);
+        g_free (stats_dir);
+        g_clear_error (&l_error);
+
+        /* lets try /sys/kvdo */
+        stats_dir = g_build_path (G_DIR_SEPARATOR_S, VDO_SYS_PATH, name, "statistics", NULL);
+        dir = g_dir_open (stats_dir, 0, error);
+        if (dir == NULL) {
+            g_prefix_error (error, "Error reading statistics from %s: ", stats_dir);
+            g_free (stats_dir);
+            return NULL;
+        }
     }
 
     stats = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
