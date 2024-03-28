@@ -1,8 +1,162 @@
-libblockdev (2.26-1deepin) unstable; urgency=medium
+libblockdev (3.1.1-1) unstable; urgency=medium
 
-  * Backport libblockdev to use libext2fs instead of spawning dumpe2fs.
+  * New upstream release
+  * Update symbols file for libblockdev3
 
- -- Tianyu Chen <sweetyfish@deepin.org>  Wed, 30 Aug 2023 17:21:52 +0800
+ -- Michael Biebl <biebl@debian.org>  Tue, 26 Mar 2024 14:32:04 +0100
+
+libblockdev (3.1.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Update symbols files for libblockdev3, libblockdev-fs3 and
+    libblockdev-swap3
+
+ -- Michael Biebl <biebl@debian.org>  Fri, 19 Jan 2024 21:39:19 +0100
+
+libblockdev (3.0.4-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Michael Biebl <biebl@debian.org>  Fri, 13 Oct 2023 10:07:41 +0200
+
+libblockdev (3.0.3-1) unstable; urgency=medium
+
+  * New upstream release
+  * Drop patches, merged upstream
+
+ -- Michael Biebl <biebl@debian.org>  Thu, 31 Aug 2023 23:03:04 +0200
+
+libblockdev (3.0.2-3) unstable; urgency=medium
+
+  * fs: Fix leaking directories with temporary mounts (Closes: #1042001)
+
+ -- Michael Biebl <biebl@debian.org>  Sat, 29 Jul 2023 09:00:22 +0200
+
+libblockdev (3.0.2-2) unstable; urgency=medium
+
+  [ Michael Biebl ]
+  * Enable tools and create a libblockdev-tools package (Closes: #1040838)
+  * Run upstream integration test via autopkgtest
+  * Only run those parts of the upstream test suite that don't require
+    compilation
+
+  [ Sebastien Bacher ]
+  * Update libblockdev-mpath2 → libblockdev-mpath3 for Ubuntu's i386 exclusion
+    (Closes: #1040847)
+
+ -- Michael Biebl <biebl@debian.org>  Tue, 25 Jul 2023 18:06:55 +0200
+
+libblockdev (3.0.2-1) unstable; urgency=medium
+
+  * New upstream release
+  * Drop patches, merged upstream
+  * Request standard CI on salsa.debian.org
+
+ -- Michael Biebl <biebl@debian.org>  Thu, 20 Jul 2023 15:30:04 +0200
+
+libblockdev (3.0.1-2) unstable; urgency=medium
+
+  * Drop fdisk Depends from libblockdev-part.
+    It only needs the library, not the command line tools.
+  * Remove unnecessary version restrictions
+  * Demote mdadm Depends of libblockdev-mdraid to Suggests.
+    mdadm is a rather heavy dependency so avoid installing it by default.
+    Users with RAID devices should typically have mdadm installed.
+    (Closes: #1040908)
+  * Add myself to Uploaders
+
+ -- Michael Biebl <biebl@debian.org>  Thu, 13 Jul 2023 16:40:45 +0200
+
+libblockdev (3.0.1-1) unstable; urgency=medium
+
+  * Team upload
+  * New upstream release
+  * Drop patches, all merged upstream
+  * Demote e2fsprogs from Depends to Recommends (Closes: #1000353)
+  * Restrict list of exported symbols via -export-symbols-regex
+  * Upload to unstable
+
+ -- Michael Biebl <biebl@debian.org>  Mon, 10 Jul 2023 09:18:50 +0200
+
+libblockdev (3.0-2) experimental; urgency=medium
+
+  * Team upload
+  * Update depencencies
+    - Fix name of lvm2 Depends
+    - Drop no longer needed gdisk Depends from libblockdev-part3
+    - Add lvm2-dbusd Depends to libblockdev-lvm-dbus3
+    - Add ndctl Depends to libblockdev-nvdimm3
+    - Wrap dependencies
+  * Fix many exported private symbols and missing declarations.
+    Patches cherry-picked from upstream Git.
+  * Update symbols files accordingly
+  * Make the conf.d directory versioned (Closes: #1040208)
+  * Update .install files accordingly
+  * Re-add s390x specific (stub) symbols
+
+ -- Michael Biebl <biebl@debian.org>  Mon, 03 Jul 2023 23:32:12 +0200
+
+libblockdev (3.0-1) experimental; urgency=medium
+
+  * Team upload
+
+  [ Debian Janitor ]
+  * Update lintian override info format in
+    d/libblockdev-part-err2.lintian-overrides on line 4.
+  * Avoid explicitly specifying -Wl,--as-needed linker flag.
+
+  [ Michael Biebl ]
+  * New upstream release
+  * Remove obsolete configure switches
+  * Update Build-Depends
+    - Bump Build-Depends on libcryptsetup-dev to (>= 2.3.0)
+    - Add libkeyutils-dev for the crypto plugin
+    - Replace libparted-dev with libfdisk-dev
+    - Add uuid-dev and libext2fs-dev for the fs plugin
+  * Drop libblockdev-kbd{2,-dev} packages
+  * Drop libblockdev-part-err{2,dev} packages
+  * Update packages for 2->3 soname bump
+  * Install new logging.h header in libblockdev-utils-dev
+  * Update symbols files.
+    Some symbols are not meant to be public, so mark them as optional.
+  * Bump Standards-Version to 4.6.2
+  * Fix dependencies of -dev packages
+  * Drop ia64 specific workarounds
+  * Use DEB_PYTHON_INSTALL_LAYOUT="deb" to get the correct sysconfig scheme on
+    Debian
+  * Enable NVMe plugin
+  * vdo_stats: Remove unused libparted include.
+    Patch cherry-picked from upstream Git.
+
+ -- Michael Biebl <biebl@debian.org>  Thu, 29 Jun 2023 16:44:38 +0200
+
+libblockdev (2.28-2) unstable; urgency=medium
+
+  * Team upload
+  * Disable dmraid support.
+    dmraid has been unmaintained for many years and is scheduled to be
+    removed in trixie. (Closes: #1021487)
+
+ -- Michael Biebl <biebl@debian.org>  Wed, 12 Oct 2022 22:22:59 +0200
+
+libblockdev (2.28-1) unstable; urgency=medium
+
+  * Team upload
+  * New upstream release
+  * Drop no longer needed override for dh_missing
+  * Use execute_before instead of override for dh_install
+  * Drop obsolete alternative util-linux dependency
+
+ -- Michael Biebl <biebl@debian.org>  Wed, 14 Sep 2022 20:37:24 +0200
+
+libblockdev (2.27-1) unstable; urgency=medium
+
+  * Team upload
+  * New upstream release
+  * Set Rules-Requires-Root: no
+  * Bump Standards-Version to 4.6.1, no further changes
+
+ -- Michael Biebl <biebl@debian.org>  Mon, 06 Jun 2022 00:21:07 +0200
 
 libblockdev (2.26-1) unstable; urgency=medium
 
