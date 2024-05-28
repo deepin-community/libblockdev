@@ -26,6 +26,8 @@
 #include "btrfs.h"
 #include "check_deps.h"
 
+#define BTRFS_MIN_VERSION "3.18.2"
+
 /**
  * SECTION: btrfs
  * @short_description: plugin for operations with BTRFS devices
@@ -129,46 +131,6 @@ static const gchar*const module_deps[MODULE_DEPS_LAST] = { "btrfs" };
 
 
 /**
- * bd_btrfs_check_deps:
- *
- * Returns: whether the plugin's runtime dependencies are satisfied or not
- *
- * Function checking plugin's runtime dependencies.
- *
- */
-gboolean bd_btrfs_check_deps (void) {
-    GError *error = NULL;
-    guint i = 0;
-    gboolean status = FALSE;
-    gboolean ret = TRUE;
-
-    for (i=0; i < DEPS_LAST; i++) {
-        status = bd_utils_check_util_version (deps[i].name, deps[i].version,
-                                              deps[i].ver_arg, deps[i].ver_regexp, &error);
-        if (!status)
-            g_warning ("%s", error->message);
-        else
-            g_atomic_int_or (&avail_deps, 1 << i);
-        g_clear_error (&error);
-        ret = ret && status;
-    }
-
-    for (i=0; i < MODULE_DEPS_LAST; i++) {
-        status = check_module_deps (&avail_module_deps, MODULE_DEPS_BTRFS_MASK, module_deps, MODULE_DEPS_LAST, &deps_check_lock, &error);
-        if (!status) {
-            g_warning ("%s", error->message);
-            g_clear_error (&error);
-        }
-        ret = ret && status;
-    }
-
-    if (!ret)
-        g_warning("Cannot load the BTRFS plugin");
-
-    return ret;
-}
-
-/**
  * bd_btrfs_init:
  *
  * Initializes the plugin. **This function is called automatically by the
@@ -192,18 +154,17 @@ void bd_btrfs_close (void) {
 }
 
 
-#define UNUSED __attribute__((unused))
 
 /**
  * bd_btrfs_is_tech_avail:
  * @tech: the queried tech
  * @mode: a bit mask of queried modes of operation for @tech
- * @error: (out): place to store error (details about why the @tech-@mode combination is not available)
+ * @error: (out) (optional): place to store error (details about why the @tech-@mode combination is not available)
  *
- * Returns: whether the @tech-@mode combination is avaible -- supported by the
+ * Returns: whether the @tech-@mode combination is available -- supported by the
  *          plugin implementation and having all the runtime dependencies available
  */
-gboolean bd_btrfs_is_tech_avail (BDBtrfsTech tech UNUSED, guint64 mode UNUSED, GError **error UNUSED) {
+gboolean bd_btrfs_is_tech_avail (BDBtrfsTech tech G_GNUC_UNUSED, guint64 mode G_GNUC_UNUSED, GError **error) {
     /* all tech-mode combinations are supported by this implementation of the plugin */
     return check_deps (&avail_deps, DEPS_BTRFS_MASK, deps, DEPS_LAST, &deps_check_lock, error) &&
            check_module_deps (&avail_module_deps, MODULE_DEPS_BTRFS_MASK, module_deps, MODULE_DEPS_LAST, &deps_check_lock, error);
@@ -229,7 +190,7 @@ static BDBtrfsDeviceInfo* get_device_info_from_match (GMatchInfo *match_info) {
             bs_size_free (size);
         }
         if (error)
-            g_warning ("%s", error->msg);
+            bd_utils_log_format (BD_UTILS_LOG_WARNING, "%s", error->msg);
         bs_clear_error (&error);
         g_free (item);
     }
@@ -242,7 +203,7 @@ static BDBtrfsDeviceInfo* get_device_info_from_match (GMatchInfo *match_info) {
             bs_size_free (size);
         }
         if (error)
-            g_warning ("%s", error->msg);
+            bd_utils_log_format (BD_UTILS_LOG_WARNING, "%s", error->msg);
         bs_clear_error (&error);
         g_free (item);
     }
@@ -288,7 +249,7 @@ static BDBtrfsFilesystemInfo* get_filesystem_info_from_match (GMatchInfo *match_
             bs_size_free (size);
         }
         if (error)
-            g_warning ("%s", error->msg);
+            bd_utils_log_format (BD_UTILS_LOG_WARNING, "%s", error->msg);
         bs_clear_error (&error);
         g_free (item);
     }
@@ -299,12 +260,12 @@ static BDBtrfsFilesystemInfo* get_filesystem_info_from_match (GMatchInfo *match_
 /**
  * bd_btrfs_create_volume:
  * @devices: (array zero-terminated=1): list of devices to create btrfs volume from
- * @label: (allow-none): label for the volume
- * @data_level: (allow-none): RAID level for the data or %NULL to use the default
- * @md_level: (allow-none): RAID level for the metadata or %NULL to use the default
- * @extra: (allow-none) (array zero-terminated=1): extra options for the volume creation (right now
+ * @label: (nullable): label for the volume
+ * @data_level: (nullable): RAID level for the data or %NULL to use the default
+ * @md_level: (nullable): RAID level for the metadata or %NULL to use the default
+ * @extra: (nullable) (array zero-terminated=1): extra options for the volume creation (right now
  *                                                 passed to the 'mkfs.btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the new btrfs volume was created from @devices or not
  *
@@ -377,9 +338,9 @@ gboolean bd_btrfs_create_volume (const gchar **devices, const gchar *label, cons
  * bd_btrfs_add_device:
  * @mountpoint: mountpoint of the btrfs volume to add new device to
  * @device: a device to add to the btrfs volume
- * @extra: (allow-none) (array zero-terminated=1): extra options for the addition (right now
+ * @extra: (nullable) (array zero-terminated=1): extra options for the addition (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the @device was successfully added to the @mountpoint btrfs volume or not
  *
@@ -398,9 +359,9 @@ gboolean bd_btrfs_add_device (const gchar *mountpoint, const gchar *device, cons
  * bd_btrfs_remove_device:
  * @mountpoint: mountpoint of the btrfs volume to remove device from
  * @device: a device to remove from the btrfs volume
- * @extra: (allow-none) (array zero-terminated=1): extra options for the removal (right now
+ * @extra: (nullable) (array zero-terminated=1): extra options for the removal (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the @device was successfully removed from the @mountpoint btrfs volume or not
  *
@@ -419,9 +380,9 @@ gboolean bd_btrfs_remove_device (const gchar *mountpoint, const gchar *device, c
  * bd_btrfs_create_subvolume:
  * @mountpoint: mountpoint of the btrfs volume to create subvolume under
  * @name: name of the subvolume
- * @extra: (allow-none) (array zero-terminated=1): extra options for the subvolume creation (right now
+ * @extra: (nullable) (array zero-terminated=1): extra options for the subvolume creation (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the @mountpoint/@name subvolume was successfully created or not
  *
@@ -452,9 +413,9 @@ gboolean bd_btrfs_create_subvolume (const gchar *mountpoint, const gchar *name, 
  * bd_btrfs_delete_subvolume:
  * @mountpoint: mountpoint of the btrfs volume to delete subvolume from
  * @name: name of the subvolume
- * @extra: (allow-none) (array zero-terminated=1): extra options for the subvolume deletion (right now
+ * @extra: (nullable) (array zero-terminated=1): extra options for the subvolume deletion (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the @mountpoint/@name subvolume was successfully deleted or not
  *
@@ -484,7 +445,7 @@ gboolean bd_btrfs_delete_subvolume (const gchar *mountpoint, const gchar *name, 
 /**
  * bd_btrfs_get_default_subvolume_id:
  * @mountpoint: mountpoint of the volume to get the default subvolume ID of
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: ID of the @mountpoint volume's default subvolume. If 0,
  * @error) may be set to indicate error
@@ -502,11 +463,11 @@ guint64 bd_btrfs_get_default_subvolume_id (const gchar *mountpoint, GError **err
 
     if (!check_deps (&avail_deps, DEPS_BTRFS_MASK, deps, DEPS_LAST, &deps_check_lock, error) ||
         !check_module_deps (&avail_module_deps, MODULE_DEPS_BTRFS_MASK, module_deps, MODULE_DEPS_LAST, &deps_check_lock, error))
-        return FALSE;
+        return 0;
 
     regex = g_regex_new ("ID (\\d+) .*", 0, 0, error);
     if (!regex) {
-        g_warning ("Failed to create new GRegex");
+        bd_utils_log_format (BD_UTILS_LOG_WARNING, "Failed to create new GRegex");
         /* error is already populated */
         return 0;
     }
@@ -541,9 +502,9 @@ guint64 bd_btrfs_get_default_subvolume_id (const gchar *mountpoint, GError **err
  * bd_btrfs_set_default_subvolume:
  * @mountpoint: mountpoint of the volume to set the default subvolume ID of
  * @subvol_id: ID of the subvolume to be set as the default subvolume
- * @extra: (allow-none) (array zero-terminated=1): extra options for the setting (right now
+ * @extra: (nullable) (array zero-terminated=1): extra options for the setting (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the @mountpoint volume's default subvolume was correctly set
  * to @subvol_id or not
@@ -570,9 +531,9 @@ gboolean bd_btrfs_set_default_subvolume (const gchar *mountpoint, guint64 subvol
  * @source: path to source subvolume
  * @dest: path to new snapshot volume
  * @ro: whether the snapshot should be read-only
- * @extra: (allow-none) (array zero-terminated=1): extra options for the snapshot creation (right now
+ * @extra: (nullable) (array zero-terminated=1): extra options for the snapshot creation (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the @dest snapshot of @source was successfully created or not
  *
@@ -600,7 +561,7 @@ gboolean bd_btrfs_create_snapshot (const gchar *source, const gchar *dest, gbool
 /**
  * bd_btrfs_list_devices:
  * @device: a device that is part of the queried btrfs volume
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: (array zero-terminated=1): information about the devices that are part of the btrfs volume
  * containing @device or %NULL in case of error
@@ -623,11 +584,11 @@ BDBtrfsDeviceInfo** bd_btrfs_list_devices (const gchar *device, GError **error) 
 
     if (!check_deps (&avail_deps, DEPS_BTRFS_MASK, deps, DEPS_LAST, &deps_check_lock, error) ||
         !check_module_deps (&avail_module_deps, MODULE_DEPS_BTRFS_MASK, module_deps, MODULE_DEPS_LAST, &deps_check_lock, error))
-        return FALSE;
+        return NULL;
 
     regex = g_regex_new (pattern, G_REGEX_EXTENDED, 0, error);
     if (!regex) {
-        g_warning ("Failed to create new GRegex");
+        bd_utils_log_format (BD_UTILS_LOG_WARNING, "Failed to create new GRegex");
         /* error is already populated */
         return NULL;
     }
@@ -671,7 +632,7 @@ BDBtrfsDeviceInfo** bd_btrfs_list_devices (const gchar *device, GError **error) 
  * bd_btrfs_list_subvolumes:
  * @mountpoint: a mountpoint of the queried btrfs volume
  * @snapshots_only: whether to list only snapshot subvolumes or not
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: (array zero-terminated=1): information about the subvolumes that are part of the btrfs volume
  * mounted at @mountpoint or %NULL in case of error
@@ -689,7 +650,7 @@ BDBtrfsSubvolumeInfo** bd_btrfs_list_subvolumes (const gchar *mountpoint, gboole
     gchar **line_p = NULL;
     gchar const * const pattern = "ID\\s+(?P<id>\\d+)\\s+gen\\s+\\d+\\s+(cgen\\s+\\d+\\s+)?" \
                                   "parent\\s+(?P<parent_id>\\d+)\\s+top\\s+level\\s+\\d+\\s+" \
-                                  "(otime\\s+\\d{4}-\\d{2}-\\d{2}\\s+\\d\\d:\\d\\d:\\d\\d\\s+)?"\
+                                  "(otime\\s+(\\d{4}-\\d{2}-\\d{2}\\s+\\d\\d:\\d\\d:\\d\\d|-)\\s+)?"\
                                   "path\\s+(?P<path>\\S+)";
     GRegex *regex = NULL;
     GMatchInfo *match_info = NULL;
@@ -700,10 +661,11 @@ BDBtrfsSubvolumeInfo** bd_btrfs_list_subvolumes (const gchar *mountpoint, gboole
     BDBtrfsSubvolumeInfo* item = NULL;
     BDBtrfsSubvolumeInfo* swap_item = NULL;
     BDBtrfsSubvolumeInfo** ret = NULL;
+    GError *l_error = NULL;
 
     if (!check_deps (&avail_deps, DEPS_BTRFS_MASK, deps, DEPS_LAST, &deps_check_lock, error) ||
         !check_module_deps (&avail_module_deps, MODULE_DEPS_BTRFS_MASK, module_deps, MODULE_DEPS_LAST, &deps_check_lock, error))
-        return FALSE;
+        return NULL;
 
     if (snapshots_only) {
         argv[4] = "-s";
@@ -713,20 +675,20 @@ BDBtrfsSubvolumeInfo** bd_btrfs_list_subvolumes (const gchar *mountpoint, gboole
 
     regex = g_regex_new (pattern, G_REGEX_EXTENDED, 0, error);
     if (!regex) {
-        g_warning ("Failed to create new GRegex");
+        bd_utils_log_format (BD_UTILS_LOG_WARNING, "Failed to create new GRegex");
         /* error is already populated */
         return NULL;
     }
 
-    success = bd_utils_exec_and_capture_output (argv, NULL, &output, error);
+    success = bd_utils_exec_and_capture_output (argv, NULL, &output, &l_error);
     if (!success) {
         g_regex_unref (regex);
-        if (g_error_matches (*error,  BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_NOOUT)) {
+        if (g_error_matches (l_error,  BD_UTILS_EXEC_ERROR, BD_UTILS_EXEC_ERROR_NOOUT)) {
             /* no output -> no subvolumes */
-            g_clear_error (error);
+            g_clear_error (&l_error);
             return g_new0 (BDBtrfsSubvolumeInfo*, 1);
         } else {
-            /* error is already populated from the call above or simply no output*/
+            g_propagate_error (error, l_error);
             return NULL;
         }
     }
@@ -797,7 +759,7 @@ BDBtrfsSubvolumeInfo** bd_btrfs_list_subvolumes (const gchar *mountpoint, gboole
 /**
  * bd_btrfs_filesystem_info:
  * @device: a device that is part of the queried btrfs volume
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: information about the @device's volume's filesystem or %NULL in case of error
  *
@@ -817,11 +779,11 @@ BDBtrfsFilesystemInfo* bd_btrfs_filesystem_info (const gchar *device, GError **e
 
     if (!check_deps (&avail_deps, DEPS_BTRFS_MASK, deps, DEPS_LAST, &deps_check_lock, error) ||
         !check_module_deps (&avail_module_deps, MODULE_DEPS_BTRFS_MASK, module_deps, MODULE_DEPS_LAST, &deps_check_lock, error))
-        return FALSE;
+        return NULL;
 
     regex = g_regex_new (pattern, G_REGEX_EXTENDED, 0, error);
     if (!regex) {
-        g_warning ("Failed to create new GRegex");
+        bd_utils_log_format (BD_UTILS_LOG_WARNING, "Failed to create new GRegex");
         /* error is already populated */
         return NULL;
     }
@@ -854,12 +816,12 @@ BDBtrfsFilesystemInfo* bd_btrfs_filesystem_info (const gchar *device, GError **e
 /**
  * bd_btrfs_mkfs:
  * @devices: (array zero-terminated=1): list of devices to create btrfs volume from
- * @label: (allow-none): label for the volume
- * @data_level: (allow-none): RAID level for the data or %NULL to use the default
- * @md_level: (allow-none): RAID level for the metadata or %NULL to use the default
- * @extra: (allow-none) (array zero-terminated=1): extra options for the volume creation (right now
+ * @label: (nullable): label for the volume
+ * @data_level: (nullable): RAID level for the data or %NULL to use the default
+ * @md_level: (nullable): RAID level for the metadata or %NULL to use the default
+ * @extra: (nullable) (array zero-terminated=1): extra options for the volume creation (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the new btrfs volume was created from @devices or not
  *
@@ -875,9 +837,9 @@ gboolean bd_btrfs_mkfs (const gchar **devices, const gchar *label, const gchar *
  * bd_btrfs_resize:
  * @mountpoint: a mountpoint of the to be resized btrfs filesystem
  * @size: requested new size
- * @extra: (allow-none) (array zero-terminated=1): extra options for the volume resize (right now
+ * @extra: (nullable) (array zero-terminated=1): extra options for the volume resize (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the @mountpoint filesystem was successfully resized to @size
  * or not
@@ -902,9 +864,9 @@ gboolean bd_btrfs_resize (const gchar *mountpoint, guint64 size, const BDExtraAr
 /**
  * bd_btrfs_check:
  * @device: a device that is part of the checked btrfs volume
- * @extra: (allow-none) (array zero-terminated=1): extra options for the check (right now
+ * @extra: (nullable) (array zero-terminated=1): extra options for the check (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the filesystem was successfully checked or not
  *
@@ -923,9 +885,9 @@ gboolean bd_btrfs_check (const gchar *device, const BDExtraArg **extra, GError *
 /**
  * bd_btrfs_repair:
  * @device: a device that is part of the to be repaired btrfs volume
- * @extra: (allow-none) (array zero-terminated=1): extra options for the repair (right now
+ * @extra: (nullable) (array zero-terminated=1): extra options for the repair (right now
  *                                                 passed to the 'btrfs' utility)
- * @error: (out): place to store error (if any)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the filesystem was successfully checked and repaired or not
  *
@@ -945,7 +907,9 @@ gboolean bd_btrfs_repair (const gchar *device, const BDExtraArg **extra, GError 
  * bd_btrfs_change_label:
  * @mountpoint: a mountpoint of the btrfs filesystem to change label of
  * @label: new label for the filesystem
- * @error: (out): place to store error (if any)
+ * @extra: (nullable) (array zero-terminated=1): extra options for the volume creation (right now
+ *                                                 passed to the 'btrfs' utility)
+ * @error: (out) (optional): place to store error (if any)
  *
  * Returns: whether the label of the @mountpoint filesystem was successfully set
  * to @label or not
