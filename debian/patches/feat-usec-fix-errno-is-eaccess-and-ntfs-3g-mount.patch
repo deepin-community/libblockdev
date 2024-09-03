@@ -1,0 +1,55 @@
+From d3db556f87d6eac14342e727b34f806cfbab0d6c Mon Sep 17 00:00:00 2001
+From: xyr218 <xiongyingrong@uniontech.com>
+Date: Tue, 3 Sep 2024 15:12:00 +0800
+Subject: [PATCH] feat: usec fix errno is eaccess and ntfs 3g mount.      
+ 0001-fix-if-errno-is-EACCES-it-s-mount-no-permission.patch      
+ uniontech-0002-fixup-error-setting-bug-with-ntfs-3g-mount.patch
+
+---
+ src/plugins/fs/mount.c | 23 ++++++++++++++++++++---
+ 1 file changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/src/plugins/fs/mount.c b/src/plugins/fs/mount.c
+index 59dbaf1..e6c0430 100644
+--- a/src/plugins/fs/mount.c
++++ b/src/plugins/fs/mount.c
+@@ -28,6 +28,7 @@
+ #include <stdlib.h>
+ #include <errno.h>
+ #include <string.h>
++#include <sys/xattr.h>
+ 
+ #include "fs.h"
+ #include "mount.h"
+@@ -342,9 +343,25 @@ static gboolean get_mount_error_new (struct libmnt_context *cxt, int rc, MountAr
+         /* check whether the call failed because of lack of permission */
+         if (mnt_context_syscall_called (cxt) == 1) {
+             syscall_errno = mnt_context_get_syscall_errno (cxt);
+-            permission = syscall_errno == EPERM;
+-        } else
+-            permission = ret == MNT_EX_USAGE && mnt_context_tab_applied (cxt);
++            if(syscall_errno == EPERM || syscall_errno == EACCES)
++                permission = TRUE;
++        } else {
++#ifndef MNT_ERR_AUTH_WITH_NTFS_3G
++#define MNT_ERR_AUTH_WITH_NTFS_3G 5100
++#endif
++            if ((ret == MNT_EX_USAGE && mnt_context_tab_applied (cxt)) || (ret == MNT_ERR_AUTH_WITH_NTFS_3G))
++                permission = TRUE;
++        }
++
++           // 一些挂载工具mount.ntfs,mount.exfat等挂载失败不能获取正确的错误errno，这里强制获取，以便让文管显示正确的错误弹窗，
++        // 避免 需要格式化的错误提示。
++        if(permission == FALSE) {
++            char sid2_label[128] = {0};
++            int ret = lgetxattr(args->device, "security.selinux2", sid2_label, sizeof(sid2_label));
++            printf("lgetxattr ret=%d  sid2_label=%s\n", ret, sid2_label);
++            if(ret > 0)
++                permission = TRUE;
++        }
+ 
+         if (permission)
+             g_set_error (error, BD_FS_ERROR, BD_FS_ERROR_AUTH,
+-- 
+2.20.1
+

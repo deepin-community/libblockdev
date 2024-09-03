@@ -1,3 +1,10 @@
+libblockdev (3.1.1-1deepin1) unstable; urgency=medium
+
+  * fixup error setting bug with ntfs 3g mount.
+  * 
+
+ -- xiongyingrong <xiongyingrong@uniontech.com>  Tue, 03 Sep 2024 14:42:30 +0800
+
 libblockdev (3.1.1-1) unstable; urgency=medium
 
   * New upstream release
