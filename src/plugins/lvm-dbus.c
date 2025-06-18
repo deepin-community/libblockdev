@@ -256,7 +256,7 @@ static gboolean setup_dbus_connection (GError **error) {
 
     addr = g_dbus_address_get_for_bus_sync (G_BUS_TYPE_SYSTEM, NULL, error);
     if (!addr) {
-        bd_utils_log_format (BD_UTILS_LOG_CRIT, "Failed to get system bus address: %s\n", (*error)->message);
+        g_prefix_error (error, "Failed to get system bus address: ");
         return FALSE;
     }
 
@@ -267,8 +267,14 @@ static gboolean setup_dbus_connection (GError **error) {
 
     g_free (addr);
 
-    if (!bus || g_dbus_connection_is_closed (bus)) {
-        bd_utils_log_format (BD_UTILS_LOG_CRIT, "Failed to create a new connection for the system bus: %s\n", (*error)->message);
+    if (!bus) {
+        g_prefix_error (error, "Failed to create a new connection for the system bus: ");
+        return FALSE;
+    }
+
+    if (g_dbus_connection_is_closed (bus)) {
+        g_set_error (error, BD_LVM_ERROR, BD_LVM_ERROR_FAIL,
+                     "Connection is closed");
         return FALSE;
     }
 
@@ -287,11 +293,14 @@ static GMutex deps_check_lock;
 #define DEPS_LVM_MASK (1 << DEPS_LVM)
 #define DEPS_LVMDEVICES 1
 #define DEPS_LVMDEVICES_MASK (1 << DEPS_LVMDEVICES)
-#define DEPS_LAST 2
+#define DEPS_LVMCONFIG 2
+#define DEPS_LVMCONFIG_MASK (1 << DEPS_LVMCONFIG)
+#define DEPS_LAST 3
 
 static const UtilDep deps[DEPS_LAST] = {
     {"lvm", LVM_MIN_VERSION, "version", "LVM version:\\s+([\\d\\.]+)"},
     {"lvmdevices", NULL, NULL, NULL},
+    {"lvmconfig", "2.03.17", "--version", "LVM version:\\s+([\\d\\.]+)"},
 };
 
 #define DBUS_DEPS_LVMDBUSD 0
@@ -320,7 +329,7 @@ static const UtilFeatureDep features[FEATURES_LAST] = {
 #define MODULE_DEPS_VDO_MASK (1 << MODULE_DEPS_VDO)
 #define MODULE_DEPS_LAST 1
 
-static const gchar*const module_deps[MODULE_DEPS_LAST] = { "kvdo" };
+static const gchar*const module_deps[MODULE_DEPS_LAST] = { "dm-vdo" };
 
 /**
  * bd_lvm_init:
@@ -336,6 +345,7 @@ gboolean bd_lvm_init (void) {
        completely rely on it */
     if (G_UNLIKELY (!bus) && !setup_dbus_connection (&error)) {
         bd_utils_log_format (BD_UTILS_LOG_CRIT, "Failed to setup DBus connection: %s", error->message);
+        g_clear_error (&error);
         return FALSE;
     }
 
@@ -408,6 +418,8 @@ gboolean bd_lvm_is_tech_avail (BDLVMTech tech, guint64 mode, GError **error) {
                check_features (&avail_features, FEATURES_WRITECACHE_MASK, features, FEATURES_LAST, &deps_check_lock, error);
     case BD_LVM_TECH_DEVICES:
         return check_deps (&avail_deps, DEPS_LVMDEVICES_MASK, deps, DEPS_LAST, &deps_check_lock, error);
+    case BD_LVM_TECH_CONFIG:
+        return check_deps (&avail_deps, DEPS_LVMCONFIG_MASK, deps, DEPS_LAST, &deps_check_lock, error);
     default:
         /* everything is supported by this implementation of the plugin */
         return check_dbus_deps (&avail_dbus_deps, DBUS_DEPS_LVMDBUSD_MASK, dbus_deps, DBUS_DEPS_LAST, &deps_check_lock, error);
@@ -2699,10 +2711,34 @@ gboolean bd_lvm_lvresize (const gchar *vg_name, const gchar *lv_name, guint64 si
  *
  * Tech category: %BD_LVM_TECH_BASIC-%BD_LVM_TECH_MODE_MODIFY
  */
-gboolean bd_lvm_lvrepair (const gchar *vg_name G_GNUC_UNUSED, const gchar *lv_name G_GNUC_UNUSED, const gchar **pv_list G_GNUC_UNUSED,
-                          const BDExtraArg **extra G_GNUC_UNUSED, GError **error) {
-  g_set_error (error, BD_LVM_ERROR, BD_LVM_ERROR_TECH_UNAVAIL,
-               "lvrepair is not supported by this plugin implementation.");
+gboolean bd_lvm_lvrepair (const gchar *vg_name, const gchar *lv_name, const gchar **pv_list,
+                          const BDExtraArg **extra, GError **error) {
+    GVariantBuilder builder;
+    GVariant *params = NULL;
+    gchar *path = NULL;
+    const gchar **pv = NULL;
+    GVariant *pvs = NULL;
+
+    /* build the array of PVs (object paths) */
+    g_variant_builder_init (&builder, G_VARIANT_TYPE_OBJECT_PATH_ARRAY);
+    for (pv=pv_list; *pv; pv++) {
+        path = get_object_path (*pv, error);
+        if (!path) {
+            g_variant_builder_clear (&builder);
+            return FALSE;
+        }
+        g_variant_builder_add_value (&builder, g_variant_new ("o", path));
+    }
+    pvs = g_variant_builder_end (&builder);
+    g_variant_builder_clear (&builder);
+
+    g_variant_builder_init (&builder, G_VARIANT_TYPE_TUPLE);
+    g_variant_builder_add_value (&builder, pvs);
+    params = g_variant_builder_end (&builder);
+    g_variant_builder_clear (&builder);
+
+    return call_lv_method_sync (vg_name, lv_name, "RepairRaidLv", params, NULL, extra, TRUE, error);
+
   return FALSE;
 }
 
@@ -3411,9 +3447,16 @@ gboolean bd_lvm_thsnapshotcreate (const gchar *vg_name, const gchar *origin_name
 
 /**
  * bd_lvm_set_global_config:
- * @new_config: (nullable): string representation of the new global LVM
- *                            configuration to set or %NULL to reset to default
+ * @new_config: (nullable): string representation of the new global libblockdev LVM
+ *                          configuration to set or %NULL to reset to default
  * @error: (out) (optional): place to store error (if any)
+ *
+ *
+ * Note: This function sets configuration options for LVM calls internally
+ *       in libblockdev, it doesn't change the global lvm.conf config file.
+ *       Calling this function with `backup {backup=0 archive=0}` for example
+ *       means `--config=backup {backup=0 archive=0}"` will be added to all
+ *       calls libblockdev makes.
  *
  * Returns: whether the new requested global config @new_config was successfully
  *          set or not
@@ -3444,7 +3487,10 @@ gboolean bd_lvm_set_global_config (const gchar *new_config, GError **error G_GNU
  * @error: (out) (optional): place to store error (if any)
  *
  * Returns: (transfer full): a copy of a string representation of the currently
- *                           set LVM global configuration
+ *                           set libblockdev LVM global configuration
+ *
+ * Note: This function does not change the global `lvm.conf` config
+ *       file, see %bd_lvm_set_global_config for details.
  *
  * Tech category: %BD_LVM_TECH_GLOB_CONF no mode (it is ignored)
  */
@@ -4704,10 +4750,10 @@ BDLVMVDOWritePolicy bd_lvm_get_vdo_write_policy_from_str (const gchar *policy_st
  *                                                    statistics or %NULL in case of error
  *                                                    (@error gets populated in those cases)
  *
- * Statistics are collected from the values exposed by the kernel `kvdo` module
- * at the `/sys/kvdo/<VDO_NAME>/statistics/` path.
+ * Statistics are collected from the values exposed by the kernel `dm-vdo` module.
+ *
  * Some of the keys are computed to mimic the information produced by the vdo tools.
- * Please note the contents of the hashtable may vary depending on the actual kvdo module version.
+ * Please note the contents of the hashtable may vary depending on the actual dm-vdo module version.
  *
  * Tech category: %BD_LVM_TECH_VDO-%BD_LVM_TECH_MODE_QUERY
  */
@@ -4739,12 +4785,12 @@ BDLVMVDOStats* bd_lvm_vdo_get_stats (const gchar *vg_name, const gchar *pool_nam
         return NULL;
 
     stats = g_new0 (BDLVMVDOStats, 1);
-    get_stat_val64_default (full_stats, "block_size", &stats->block_size, -1);
-    get_stat_val64_default (full_stats, "logical_block_size", &stats->logical_block_size, -1);
-    get_stat_val64_default (full_stats, "physical_blocks", &stats->physical_blocks, -1);
-    get_stat_val64_default (full_stats, "data_blocks_used", &stats->data_blocks_used, -1);
-    get_stat_val64_default (full_stats, "overhead_blocks_used", &stats->overhead_blocks_used, -1);
-    get_stat_val64_default (full_stats, "logical_blocks_used", &stats->logical_blocks_used, -1);
+    get_stat_val64_default (full_stats, "blockSize", &stats->block_size, -1);
+    get_stat_val64_default (full_stats, "logicalBlockSize", &stats->logical_block_size, -1);
+    get_stat_val64_default (full_stats, "physicalBlocks", &stats->physical_blocks, -1);
+    get_stat_val64_default (full_stats, "dataBlocksUsed", &stats->data_blocks_used, -1);
+    get_stat_val64_default (full_stats, "overheadBlocksUsed", &stats->overhead_blocks_used, -1);
+    get_stat_val64_default (full_stats, "logicalBlocksUsed", &stats->logical_blocks_used, -1);
     get_stat_val64_default (full_stats, "usedPercent", &stats->used_percent, -1);
     get_stat_val64_default (full_stats, "savingPercent", &stats->saving_percent, -1);
     if (!get_stat_val_double (full_stats, "writeAmplificationRatio", &stats->write_amplification_ratio))
@@ -4875,4 +4921,59 @@ gboolean bd_lvm_devices_delete (const gchar *device, const gchar *devices_file, 
     }
 
     return bd_utils_exec_and_report_error (args, extra, error);
+}
+
+/**
+ * bd_lvm_config_get:
+ * @section: (nullable): LVM config section, e.g. 'global' or %NULL to print the entire config
+ * @setting: (nullable): name of the specific setting, e.g. 'umask' or %NULL to print the entire @section
+ * @type: type of the config, e.g. 'full' or 'current'
+ * @values_only: whether to include only values without keys in the output
+ * @global_config: whether to include our internal global config in the call or not
+ * @extra: (nullable) (array zero-terminated=1): extra options for the lvmconfig command
+ *                                               (just passed to LVM as is)
+ * @error: (out) (optional): place to store error (if any)
+ *
+ * Returns: Requested LVM config @section and @setting configuration or %NULL in case of error.
+ *
+ * Tech category: (transfer full): %BD_LVM_TECH_CONFIG no mode (it is ignored)
+ */
+gchar* bd_lvm_config_get (const gchar *section, const gchar *setting, const gchar *type, gboolean values_only, gboolean global_config, const BDExtraArg **extra, GError **error) {
+    g_autofree gchar *conf_spec = NULL;
+    g_autofree gchar *config_arg = NULL;
+    const gchar *args[7] = {"lvmconfig", "--typeconfig", NULL, NULL, NULL, NULL, NULL};
+    guint next_arg = 2;
+    gchar *output = NULL;
+    gboolean success = FALSE;
+
+    if (!section && setting) {
+        g_set_error (error, BD_LVM_ERROR, BD_LVM_ERROR_FAIL,
+                     "Specifying setting without section is not supported.");
+        return NULL;
+    }
+
+    if (section)
+        if (setting)
+            conf_spec = g_strdup_printf ("%s/%s", section, setting);
+        else
+            conf_spec = g_strdup (section);
+    else
+        conf_spec = NULL;
+
+    args[next_arg++] = type;
+    args[next_arg++] = conf_spec;
+    if (values_only)
+        args[next_arg++] = "--valuesonly";
+
+    g_mutex_lock (&global_config_lock);
+    if (global_config && global_config_str) {
+        config_arg = g_strdup_printf ("--config=%s", global_config_str);
+        args[next_arg++] = config_arg;
+    }
+    g_mutex_unlock (&global_config_lock);
+
+    success = bd_utils_exec_and_capture_output (args, extra, &output, error);
+    if (!success)
+        return NULL;
+    return g_strchomp (output);
 }

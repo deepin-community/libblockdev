@@ -44,6 +44,14 @@ if !WITH_NVME
 DISTCHECK_CONFIGURE_FLAGS += --without-nvme
 endif
 
+if !WITH_SMART
+DISTCHECK_CONFIGURE_FLAGS += --without-smart
+endif
+
+if !WITH_SMARTMONTOOLS
+DISTCHECK_CONFIGURE_FLAGS += --without-smartmontools
+endif
+
 if !WITH_SWAP
 DISTCHECK_CONFIGURE_FLAGS += --without-swap
 endif
@@ -57,7 +65,7 @@ DISTCHECK_CONFIGURE_FLAGS += --without-s390
 endif
 
 
-SUBDIRS = include src dist scripts data tools
+SUBDIRS = include src dist scripts data tools tests
 if WITH_GTK_DOC
 SUBDIRS += docs
 endif
@@ -68,7 +76,7 @@ MAINTAINERCLEANFILES = Makefile.in aclocal.m4 config.guess config.sub \
     configure depcomp install-sh ltmain.sh missing py-compile compile ar-lib \
     m4/*.m4
 
-LIBDIRS = src/utils/.libs:src/plugins/.libs:src/plugins/fs/.libs:src/plugins/nvme/.libs:src/lib/.libs
+LIBDIRS = src/utils/.libs:src/plugins/.libs:src/plugins/fs/.libs:src/plugins/nvme/.libs:src/plugins/smart/.libs:src/lib/.libs
 GIDIR = src/lib
 
 if WITH_PYTHON3
@@ -95,6 +103,7 @@ PLUGINS = btrfs \
 	nvme \
 	part \
 	s390 \
+	smart \
 	swap
 
 ALT_PLUGINS = lvm-dbus
@@ -157,14 +166,14 @@ coverage-all: all
 		$(COVERAGE) report --include="src/*" > coverage-report.log
 
 tag:
-	TAG="$(PACKAGE_VERSION)-1" ; \
+	TAG="$(PACKAGE_VERSION)" ; \
 	git tag -a -s -m "Tag as $$TAG" -f "$$TAG" && \
 	echo "Tagged as $$TAG"
 
 rpmlog:
 	@cl=`grep -n %changelog dist/libblockdev.spec.in |cut -d : -f 1 |head -1` ; \
-	version_release=`tail --lines=+$$(($$cl + 1)) dist/libblockdev.spec.in|head -1|cut -d- -f2-3|sed 's/ //g'` ; \
-	git log --no-merges --pretty="format:- %s (%ae)" "$$version_release.." |sed -e 's/@.*)/)/' ; \
+	version=`tail --lines=+$$(($$cl + 1)) dist/libblockdev.spec.in|head -1|cut -d- -f2|sed 's/ //g'` ; \
+	git log --no-merges --pretty="format:- %s (%ae)" "$$version.." |sed -e 's/@.*)/)/' ; \
 	echo
 
 shortlog:

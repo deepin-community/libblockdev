@@ -1,7 +1,7 @@
 import unittest
 import os
 import re
-from utils import create_sparse_tempfile, create_lio_device, delete_lio_device, TestTags, tag_test, run_command
+from utils import create_sparse_tempfile, create_lio_device, delete_lio_device, TestTags, tag_test, run_command, required_plugins
 import overrides_hack
 
 from bytesize.bytesize import Size, ROUND_UP
@@ -12,6 +12,8 @@ gi.require_version('GLib', '2.0')
 gi.require_version('BlockDev', '3.0')
 from gi.repository import GLib, BlockDev
 
+
+@required_plugins(("part",))
 class PartTestCase(unittest.TestCase):
 
     requested_plugins = BlockDev.plugin_specs_from_names(("part",))
@@ -1227,11 +1229,13 @@ class PartSetTypeCase(PartTestCase):
         self.assertTrue(succ)
         ps = BlockDev.part_get_part_spec (self.loop_dev, ps.path)
         self.assertEqual(ps.type_guid, "E6D6D379-F507-44C2-A23C-238F2A3DF928")
+        self.assertEqual(ps.type_name, "Linux LVM")
 
         succ = BlockDev.part_set_part_type (self.loop_dev, ps.path, "0FC63DAF-8483-4772-8E79-3D69D8477DE4")
         self.assertTrue(succ)
         ps = BlockDev.part_get_part_spec (self.loop_dev, ps.path)
         self.assertEqual(ps.type_guid, "0FC63DAF-8483-4772-8E79-3D69D8477DE4")
+        self.assertEqual(ps.type_name, "Linux filesystem")
 
         # let's now test an MSDOS partition table (doesn't support type GUIDs)
         succ = BlockDev.part_create_table (self.loop_dev, BlockDev.PartTableType.MSDOS, True)
@@ -1322,6 +1326,7 @@ class PartSetGptFlagsCase(PartTestCase):
         self.assertTrue(succ)
         ps = BlockDev.part_get_part_spec (self.loop_dev, ps.path)
         self.assertEqual(ps.type_guid, esp_guid)
+        self.assertEqual(ps.type_name, "EFI System")
 
 
 class PartSetGptAttrsCase(PartTestCase):

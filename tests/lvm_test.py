@@ -9,7 +9,7 @@ import time
 from contextlib import contextmanager
 from packaging.version import Version
 
-from utils import create_sparse_tempfile, create_lio_device, delete_lio_device, fake_utils, fake_path, TestTags, tag_test, run_command, read_file
+from utils import create_sparse_tempfile, create_lio_device, delete_lio_device, fake_utils, fake_path, TestTags, tag_test, run_command, read_file, required_plugins
 
 import gi
 gi.require_version('GLib', '2.0')
@@ -32,6 +32,7 @@ def wait_for_sync(vg_name, lv_name):
             time.sleep(1)
 
 
+@required_plugins(("lvm",))
 class LVMTestCase(unittest.TestCase):
 
     @classmethod
@@ -81,6 +82,7 @@ class LvmNoDevTestCase(LVMTestCase):
     def tearDownClass(cls):
         # reset back to default
         BlockDev.utils_set_log_level(BlockDev.UTILS_LOG_WARNING)
+        BlockDev.lvm_set_global_config(None)
 
         super(LvmNoDevTestCase, cls).tearDownClass()
 
@@ -330,6 +332,48 @@ class LvmNoDevTestCase(LVMTestCase):
 
         with self.assertRaises(GLib.GError):
             BlockDev.lvm_cache_get_mode_from_str("bla")
+
+    @tag_test(TestTags.NOSTORAGE)
+    def test_lvm_config(self):
+        """Verify that we can correctly read from LVM config"""
+
+        with self.assertRaises(GLib.GError):
+            BlockDev.lvm_config_get(None, "dir")
+
+        # get entire config
+        conf = BlockDev.lvm_config_get()
+        self.assertTrue(conf)
+        self.assertTrue(conf.startswith("config"))
+
+        # get just the "devices" section
+        conf = BlockDev.lvm_config_get("devices")
+        self.assertTrue(conf)
+        self.assertTrue(conf.startswith("devices"))
+
+        # let's be brave and assume devices/dir is set everywhere ti /dev
+        devdir = BlockDev.lvm_config_get("devices", "dir", "full")
+        self.assertEqual(devdir, "\"/dev\"")
+
+        devdir = BlockDev.lvm_config_get("devices", "dir", "full", values_only=False)
+        self.assertEqual(devdir, "dir=\"/dev\"")
+
+        devdir = BlockDev.lvm_config_get("devices", "dir", "default")
+        self.assertEqual(devdir, "\"/dev\"")
+
+        # let's try to override some results with --config
+        BlockDev.lvm_set_global_config("devices/dir=/test")
+
+        devdir = BlockDev.lvm_config_get("devices", "dir", "full")
+        self.assertEqual(devdir, "\"/test\"")
+
+        # "default" config should not be affected by --config
+        devdir = BlockDev.lvm_config_get("devices", "dir", "default")
+        self.assertEqual(devdir, "\"/dev\"")
+
+        # disable global config
+        devdir = BlockDev.lvm_config_get("devices", "dir", "full", global_config=False)
+        self.assertEqual(devdir, "\"/dev\"")
+
 
 class LvmPVonlyTestCase(LVMTestCase):
 
@@ -1929,11 +1973,11 @@ class LVMVDOTest(LVMTestCase):
 
     @classmethod
     def setUpClass(cls):
-        if not BlockDev.utils_have_kernel_module("kvdo"):
+        if not BlockDev.utils_have_kernel_module("dm-vdo"):
             raise unittest.SkipTest("VDO kernel module not available, skipping.")
 
         try:
-            BlockDev.utils_load_kernel_module("kvdo")
+            BlockDev.utils_load_kernel_module("dm-vdo")
         except GLib.GError as e:
             if "File exists" not in e.message:
                 raise unittest.SkipTest("cannot load VDO kernel module, skipping.")
@@ -1990,7 +2034,9 @@ class LVMVDOTest(LVMTestCase):
         pool_info = BlockDev.lvm_lvinfo("testVDOVG", "vdoPool")
         self.assertEqual(pool_info.segtype, "vdo-pool")
         self.assertEqual(pool_info.data_lv, "vdoPool_vdata")
-        self.assertGreater(pool_info.data_percent, 0)
+        lvm_version = self._get_lvm_version()
+        if lvm_version >= Version("2.03.24"):
+            self.assertGreater(pool_info.data_percent, 0)
 
         pool = BlockDev.lvm_vdolvpoolname("testVDOVG", "vdoLV")
         self.assertEqual(pool, lv_info.pool_lv)
@@ -2151,7 +2197,11 @@ class LVMVDOTest(LVMTestCase):
         self.assertTrue(vdo_info.deduplication)
 
         vdo_stats = BlockDev.lvm_vdo_get_stats("testVDOVG", "vdoPool")
-        self.assertEqual(vdo_info.saving_percent, vdo_stats.saving_percent)
+
+        lvm_version = self._get_lvm_version()
+        if lvm_version >= Version("2.03.24"):
+            # saving_percent is incorrect with LVM < 2.03.24
+            self.assertEqual(vdo_info.saving_percent, vdo_stats.saving_percent)
 
         # just sanity check
         self.assertNotEqual(vdo_stats.used_percent, -1)
