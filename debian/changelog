@@ -1,9 +1,73 @@
-libblockdev (3.1.1-1deepin1) unstable; urgency=medium
+libblockdev (3.3.0-2.1) unstable; urgency=high
 
-  * fixup error setting bug with ntfs 3g mount.
-  * 
+  * Non-maintainer upload by the Security Team.
+  * dont allow suid and dev set on fs resize (CVE-2025-6019)
 
- -- xiongyingrong <xiongyingrong@uniontech.com>  Tue, 03 Sep 2024 14:42:30 +0800
+ -- Salvatore Bonaccorso <carnil@debian.org>  Mon, 09 Jun 2025 15:06:46 +0200
+
+libblockdev (3.3.0-2) unstable; urgency=medium
+
+  * autopkgtest: Add dependency on vdo.
+    The LVM VDO tests require vdoformat.
+
+ -- Michael Biebl <biebl@debian.org>  Thu, 27 Feb 2025 22:12:11 +0100
+
+libblockdev (3.3.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Rebase patches
+  * Update symbols file for libblockdev3, libblockdev-lvm3 and
+    libblockdev-lvm-dbus3
+
+ -- Michael Biebl <biebl@debian.org>  Thu, 13 Feb 2025 15:34:42 +0100
+
+libblockdev (3.2.1-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Michael Biebl <biebl@debian.org>  Thu, 07 Nov 2024 23:22:34 +0100
+
+libblockdev (3.2.0-2) unstable; urgency=medium
+
+  * Re-add s390 specific symbols for libblockdev
+  * Skip smartmontools integration test
+
+ -- Michael Biebl <biebl@debian.org>  Sun, 15 Sep 2024 20:25:15 +0200
+
+libblockdev (3.2.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Update debian/watch and debian/gbp.conf
+  * Drop patches, all merged upstream
+  * Disable smartmontools based SMART plugin which is (still) marked as
+    experimental
+  * Add Build-Depends on libatasmart-dev.
+    Required to build the libatasmart based SMART plugin.
+  * Add Build-Depends on libyaml-dev.
+    Required by the lvm and lvm-dbus plugin.
+  * Add packages for new smart plugin
+  * Update symbols files for libblockdev3, libblockdev-crypto3 and
+    libblockdev-utils3
+
+ -- Michael Biebl <biebl@debian.org>  Thu, 12 Sep 2024 18:06:52 +0200
+
+libblockdev (3.1.1-2) unstable; urgency=medium
+
+  [ Alessandro Astone ]
+  * Add upstream patches to fix build with gcc14.
+    The real fix would be in e2fsprogs, but it's still not fixed upstream:
+    https://lore.kernel.org/all/20240527091542.4121237-2-hi@alyssa.is/T/#u
+    (Closes: #1071320)
+
+  [ Michael Biebl ]
+  * Add symbols file for libblockdev-mpath
+  * Add ${gir:Depends} and ${gir:Provides} to libblockdev-dev.
+    Fixes lintian warning W: libblockdev-dev:
+    gir-package-name-does-not-match gir1.2-blockdev-3.0-dev
+    [usr/share/gir-1.0/BlockDev-3.0.gir]
+  * Bump Standards-Version to 4.7.0, no further changes required
+
+ -- Michael Biebl <biebl@debian.org>  Fri, 16 Aug 2024 19:23:21 +0200
 
 libblockdev (3.1.1-1) unstable; urgency=medium
 

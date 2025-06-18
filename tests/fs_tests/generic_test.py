@@ -342,8 +342,12 @@ class CanResizeRepairCheckLabel(GenericNoDevTestCase):
         self.assertEqual(util, "resize2fs")
 
         avail, util = BlockDev.fs_can_get_min_size("ntfs")
-        self.assertTrue(avail)
-        self.assertEqual(util, None)
+        if self.ntfs_avail:
+            self.assertTrue(avail)
+            self.assertEqual(util, None)
+        else:
+            self.assertFalse(avail)
+            self.assertEqual(util, "ntfsresize")
 
         with self.assertRaises(GLib.GError):
             BlockDev.fs_can_get_min_size("xfs")
@@ -976,6 +980,7 @@ class GenericResize(GenericTestCase):
         self.assertEqual(new_size, size)
 
     @tag_test(TestTags.UNSTABLE)
+    @utils.required_plugins(("tools",))
     def test_vfat_generic_resize(self):
         """Test generic resize function with a vfat file system"""
         def mkfs_vfat(device, options=None):

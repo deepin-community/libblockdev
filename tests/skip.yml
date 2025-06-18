@@ -50,14 +50,18 @@
     - arch: "i686"
       reason: "Cache attach/detach fails with ENOMEM on 32bit systems"
 
-- test: lvm_dbus_tests.LvmTestLVcreateRemove
+- test: (lvm_test|lvm_dbus_tests).LVMVDOTest
   skip_on:
-   - distro: "centos"
-     version: "8"
-     reason: "LVM DBus doesn't include error message from the command line on CentOS/RHEL 8"
+    - distro: "debian"
+      arch: "i686"
+      reason: "vdo userspace tools are not available on 32bit Debian"
 
-- test: nvme_test
+- test: lvm_dbus_tests.LvmTestPartialLVs
   skip_on:
-    - distro: "centos"
-      version: "8"
-      reason: "required version of libnvme is not available CentOS 8"
+    - reason: "LVM DBus doesn't support LV repair yet"
+
+- test: (lvm_test|lvm_dbus_tests).LvmNoDevTestCase.test_lvm_config
+  skip_on:
+    - distro: "debian"
+      version: "12"
+      reason: "LVM >= 2.03.17 needed for LVM config parsing with --valuesonly"
