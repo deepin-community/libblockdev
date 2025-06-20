@@ -1,3 +1,10 @@
+libblockdev (3.3.0-2.1deepin1) unstable; urgency=medium
+
+  [ xiongyingrong ]
+  * fixup error setting bug with ntfs 3g mount.
+
+ -- Tianyu Chen <sweetyfish@deepin.org>  Fri, 20 Jun 2025 15:56:11 +0800
+
 libblockdev (3.3.0-2.1) unstable; urgency=high
 
   * Non-maintainer upload by the Security Team.
