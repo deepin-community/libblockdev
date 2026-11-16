@@ -1,3 +1,14 @@
+libblockdev (3.3.0-2.1deepin3) unstable; urgency=medium
+
+  * fix(cve): CVE-2026-111581 (low) - fs: Reject NTFS labels starting
+    with a dash / fs: Prevent VFAT labels from being interpreted as
+    options   Upstream: https://github.com/storaged-
+    project/libblockdev/commit/4ef6b2b4798a46566fe8815eaabd163205be20bd,
+    https://github.com/storaged-
+    project/libblockdev/commit/bf990ef6d720b4a0d3cb22c572f473fc5dc7f83c
+
+ -- deepin-ci-robot <packages@deepin.org>  Mon, 16 Nov 2026 21:14:50 +0800
+
 libblockdev (3.3.0-2.1deepin2) unstable; urgency=medium
 
   * Rebuild with LTO enabled (dpkg vendor feature optimize/lto).
