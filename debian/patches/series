@@ -1,3 +1,4 @@
 Skip-smartmontools-integration-test.patch
 dont-allow-suid-and-dev-set-on-fs-resize.patch
 feat-usec-fix-errno-is-eaccess-and-ntfs-3g-mount.patch
+CVE-2026-111581.patch
